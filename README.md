@@ -11,9 +11,9 @@ non-technical guest can do it one-handed with zero instructions.
 3. Tap **Add Photos & Videos**, pick from their camera roll — done. Files
    upload automatically with a progress indicator and a thank-you.
 
-Photos are downscaled **on the phone** before upload (smaller storage, and it
-converts iPhone HEIC → JPEG so previews work everywhere). Videos upload as-is
-via resilient multipart chunks.
+Files upload **at full quality, untouched** — the couple gets the real
+originals. Large files (video + full-size photos) use resilient multipart
+chunked uploads to survive flaky venue wifi.
 
 ---
 
@@ -39,16 +39,24 @@ That's it. Share the link / QR with guests.
 
 ---
 
-## Heads-up: the Hobby storage limit
+## Storage: plan for Vercel Pro
 
-This runs on Vercel's free **Hobby** tier. Blob's free allotment is small
-(~1 GB). Because photos are downscaled on-device, **thousands of photos fit
-fine** — but **video fills space fast** (a single phone clip can be 50–150 MB).
+Originals are stored full-size, so a wedding's worth of photos + video will
+exceed Hobby's ~1 GB free Blob allotment. Upgrade the Vercel project to **Pro
+($20/mo)** — no code change needed. Per-file ceiling is `MAX_FILE_BYTES` in
+[`lib/config.ts`](lib/config.ts) (currently 1 GB).
 
-If uploads start failing on the day, that's storage filling up. The one-click
-fix is upgrading the Vercel project to **Pro ($20/mo)**; nothing in the code
-needs to change. Tune the caps in [`lib/config.ts`](lib/config.ts)
-(`MAX_FILE_BYTES`, `IMAGE_MAX_DIM`, `IMAGE_QUALITY`) anytime.
+### One tradeoff of storing originals: iPhone HEIC previews
+
+iPhones shoot **HEIC**, which most non-Apple browsers can't render in an
+`<img>`. The originals are saved perfectly and download fine, but the
+**`/gallery` page may show blank tiles for HEIC photos** on Android/desktop.
+Two ways to handle it, if the gallery matters:
+
+- Guests can set iPhone → Settings → Camera → Formats → **Most Compatible**
+  (saves as JPEG), or
+- ask me to add a small JPEG **preview** generated alongside each original —
+  the gallery uses the preview, the download still gives the full HEIC.
 
 ---
 

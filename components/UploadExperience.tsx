@@ -3,8 +3,11 @@
 import { upload } from "@vercel/blob/client";
 import { useEffect, useRef, useState } from "react";
 import { MAX_FILE_BYTES, MEDIA_PREFIX } from "@/lib/config";
-import { processImage } from "@/lib/processImage";
 import { fileExtension, slugify } from "@/lib/slug";
+
+// Switch to multipart (resilient chunked upload) for anything large, so big
+// videos and full-size photos survive flaky venue wifi.
+const MULTIPART_THRESHOLD = 8 * 1024 * 1024;
 
 type Status = "processing" | "uploading" | "done" | "error";
 
@@ -72,10 +75,8 @@ export default function UploadExperience() {
     );
   }
 
-  async function uploadOne(item: Item, original: File, uploaderSlug: string) {
+  async function uploadOne(item: Item, file: File, uploaderSlug: string) {
     try {
-      const file = item.isVideo ? original : await processImage(original);
-
       if (file.size > MAX_FILE_BYTES) {
         patch(item.id, {
           status: "error",
@@ -97,7 +98,7 @@ export default function UploadExperience() {
         access: "public",
         handleUploadUrl: "/api/upload",
         contentType: file.type,
-        multipart: item.isVideo, // resilient chunked upload for big videos
+        multipart: item.isVideo || file.size > MULTIPART_THRESHOLD,
         onUploadProgress: ({ percentage }) =>
           patch(item.id, { progress: Math.round(percentage) }),
       });
