@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useCallback, useEffect, useState } from "react";
 
 export interface GalleryItem {
@@ -54,7 +55,14 @@ export default function GalleryGrid({ items }: { items: GalleryItem[] }) {
       {/* Uniform square tiles: every tile reserves equal space, so a slow or
           unrenderable item can never collapse and shift the layout. */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
-        {items.map((item, i) => (
+        {items.map((item, i) => {
+          const alt = item.uploader ? `Shared by ${pretty(item.uploader)}` : "";
+          // Vercel's optimizer can't decode HEIC, so serve those as-is (Safari
+          // renders them; elsewhere the onError placeholder kicks in). Everything
+          // else goes through next/image for resized, cached, lazy thumbnails.
+          const isHeic = /\.hei[cf](\?|$)/i.test(item.url);
+          const onErr = () => setFailed((f) => ({ ...f, [item.url]: true }));
+          return (
           <button
             key={item.url}
             type="button"
@@ -73,14 +81,23 @@ export default function GalleryGrid({ items }: { items: GalleryItem[] }) {
                 playsInline
                 className="h-full w-full object-cover"
               />
-            ) : (
+            ) : isHeic ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img
                 src={item.url}
-                alt={item.uploader ? `Shared by ${pretty(item.uploader)}` : ""}
+                alt={alt}
                 loading="lazy"
-                onError={() => setFailed((f) => ({ ...f, [item.url]: true }))}
+                onError={onErr}
                 className="h-full w-full object-cover"
+              />
+            ) : (
+              <Image
+                src={item.url}
+                alt={alt}
+                fill
+                sizes="(max-width: 640px) 50vw, (max-width: 768px) 33vw, 25vw"
+                onError={onErr}
+                className="object-cover"
               />
             )}
 
@@ -99,7 +116,8 @@ export default function GalleryGrid({ items }: { items: GalleryItem[] }) {
               </span>
             )}
           </button>
-        ))}
+          );
+        })}
       </div>
 
       {active && (
