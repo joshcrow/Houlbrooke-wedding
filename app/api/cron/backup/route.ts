@@ -109,17 +109,17 @@ export async function GET(request: Request): Promise<NextResponse> {
           continue;
         }
         const res = await fetch(b.url);
-        if (!res.ok || !res.body) {
+        if (!res.ok) {
           errors++;
           continue;
         }
+        const data = new Uint8Array(await res.arrayBuffer());
         const name = b.pathname.slice(MEDIA_PREFIX.length).replace(/\//g, "__");
         await uploadToDrive({
           accessToken: token,
           name,
-          size: b.size,
           contentType: mimeFor(b.pathname),
-          body: res.body,
+          data,
         });
         await mark(SYNCED, b.pathname);
         backedUp++;

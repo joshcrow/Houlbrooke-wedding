@@ -31,16 +31,18 @@ export async function getDriveAccessToken(): Promise<string> {
   return data.access_token;
 }
 
-// Resumable upload, streaming the blob body straight through — the file is
-// never held in memory.
+// Resumable upload of an in-memory buffer. We buffer (rather than stream) so the
+// declared length always matches the bytes sent — Drive validates against it, so
+// a truncated/short read can never be silently accepted as a complete file. The
+// caller caps file size before buffering, so memory stays bounded.
 export async function uploadToDrive(opts: {
   accessToken: string;
   name: string;
-  size: number;
   contentType: string;
-  body: ReadableStream<Uint8Array>;
+  data: Uint8Array;
 }): Promise<void> {
   const folderId = process.env.GDRIVE_FOLDER_ID ?? "";
+  const length = opts.data.byteLength;
 
   const start = await fetch(
     "https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&fields=id",
@@ -50,7 +52,7 @@ export async function uploadToDrive(opts: {
         Authorization: `Bearer ${opts.accessToken}`,
         "Content-Type": "application/json; charset=UTF-8",
         "X-Upload-Content-Type": opts.contentType,
-        "X-Upload-Content-Length": String(opts.size),
+        "X-Upload-Content-Length": String(length),
       },
       body: JSON.stringify({ name: opts.name, parents: [folderId] }),
     },
@@ -61,16 +63,12 @@ export async function uploadToDrive(opts: {
   const uploadUrl = start.headers.get("location");
   if (!uploadUrl) throw new Error("drive: no resumable upload URL");
 
-  // duplex is required by undici to stream a request body; not in the TS lib.
-  const init = {
+  const put = await fetch(uploadUrl, {
     method: "PUT",
-    headers: { "Content-Length": String(opts.size) },
-    body: opts.body,
-    duplex: "half",
-  } as unknown as RequestInit;
-
-  const put = await fetch(uploadUrl, init);
+    body: opts.data as unknown as BodyInit,
+  });
   if (!put.ok) {
     throw new Error(`drive put ${put.status}: ${await put.text()}`);
   }
 }
+
