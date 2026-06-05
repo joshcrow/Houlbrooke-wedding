@@ -31,7 +31,7 @@ export default function Home() {
         href="/manage"
         className="mt-8 text-xs text-ink/40 underline underline-offset-4"
       >
-        Couple? Manage the album
+        Manage
       </Link>
     </main>
   );
