@@ -71,6 +71,17 @@ export default function UploadExperience() {
     };
   }, []);
 
+  // Warn before leaving mid-upload (desktop/Android; iOS Safari may ignore it).
+  useEffect(() => {
+    if (!isUploading) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [isUploading]);
+
   function rememberName(value: string) {
     setName(value);
     safeSet(NAME_KEY, value.trim());
@@ -212,6 +223,7 @@ export default function UploadExperience() {
   }
 
   function retry(item: Item) {
+    if (isUploading) return; // don't start a second run over an active batch
     if (filesRef.current.get(item.id)) {
       void runUploads([item], slugify(name));
       return;
@@ -251,6 +263,7 @@ export default function UploadExperience() {
           ref={nameInputRef}
           value={name}
           onChange={(e) => rememberName(e.target.value)}
+          maxLength={60}
           placeholder="So Katie & Conner can say thanks"
           className={`w-full rounded-2xl border bg-white/70 px-4 py-3 text-lg text-ink outline-none transition focus:ring-2 focus:ring-blue-soft/50 ${
             nameError
@@ -326,6 +339,7 @@ export default function UploadExperience() {
                     className="h-full w-full object-cover"
                     muted
                     playsInline
+                    preload="metadata"
                   />
                 ) : (
                   // eslint-disable-next-line @next/next/no-img-element
@@ -421,8 +435,10 @@ export default function UploadExperience() {
                   />
                 </div>
                 <p className="text-center text-sm font-medium text-blue-deep">
-                  Uploading {progress.done} of {progress.total}… keep this page
-                  open
+                  Uploading {progress.done} of {progress.total}…
+                </p>
+                <p className="mt-1 text-center text-xs font-bold uppercase tracking-wide text-blue-deep">
+                  Keep this page open and your screen on until it&apos;s done
                 </p>
               </>
             ) : (
