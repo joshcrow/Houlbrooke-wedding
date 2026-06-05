@@ -2,7 +2,7 @@
 
 export const COUPLE = {
   names: "Katie & Conner",
-  lastName: "Houlbrooke",
+  lastName: "Turco / Houlbrooke",
   year: "2026",
 };
 
