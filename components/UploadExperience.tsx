@@ -112,7 +112,10 @@ export default function UploadExperience() {
 
       filesRef.current.delete(item.id);
       patch(item.id, { status: "done", progress: 100 });
-    } catch {
+    } catch (err) {
+      // Surface the true cause in the console for debugging; keep the on-screen
+      // message friendly for guests.
+      console.error("Upload failed:", err);
       patch(item.id, {
         status: "error",
         error: "Upload didn't go through — tap retry.",
