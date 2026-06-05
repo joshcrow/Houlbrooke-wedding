@@ -1,17 +1,23 @@
 import Link from "next/link";
 import GalleryGrid, { type GalleryItem } from "@/components/GalleryGrid";
 import { COUPLE } from "@/lib/config";
+import { isGalleryHidden } from "@/lib/gallerySetting";
 import { listAllMedia } from "@/lib/listMedia";
 
-// Always fresh — new uploads should show on reload.
+// Always fresh — new uploads (and the visibility toggle) should reflect on load.
 export const dynamic = "force-dynamic";
 
 export default async function Gallery() {
   let items: GalleryItem[] = [];
   let error = "";
+  let hidden = false;
 
   try {
-    items = await listAllMedia();
+    hidden = await isGalleryHidden();
+    if (!hidden) {
+      // Drop photos the couple has hidden from the public gallery.
+      items = (await listAllMedia()).filter((it) => !it.hidden);
+    }
   } catch {
     error = "Gallery isn't ready yet — check back once photos are added.";
   }
@@ -32,15 +38,21 @@ export default async function Gallery() {
           </Link>
         </div>
 
+        {hidden && (
+          <p className="text-center text-ink/60">
+            The gallery is private right now. Check back later!
+          </p>
+        )}
+
         {error && <p className="text-center text-ink/60">{error}</p>}
 
-        {!error && items.length === 0 && (
+        {!hidden && !error && items.length === 0 && (
           <p className="text-center text-ink/60">
             No photos yet — be the first to add one!
           </p>
         )}
 
-        {!error && items.length > 0 && (
+        {!hidden && !error && items.length > 0 && (
           <>
             <p className="mb-5 text-center text-sm text-ink/55">
               Tap any photo to view it full size and download it. A

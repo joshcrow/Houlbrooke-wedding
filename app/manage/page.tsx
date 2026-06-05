@@ -1,6 +1,7 @@
 import Link from "next/link";
 import ManageGrid from "@/components/ManageGrid";
 import { COUPLE } from "@/lib/config";
+import { isGalleryHidden } from "@/lib/gallerySetting";
 import { listAllMedia, type MediaItem } from "@/lib/listMedia";
 import { isOwnerAuthed } from "@/lib/ownerSession";
 
@@ -15,9 +16,13 @@ export default async function Manage() {
   // Only list (and send) media once the owner session is verified server-side.
   const authed = isOwnerAuthed();
   let items: MediaItem[] = [];
+  let galleryHidden = false;
   if (authed) {
     try {
-      items = await listAllMedia();
+      [items, galleryHidden] = await Promise.all([
+        listAllMedia(),
+        isGalleryHidden(),
+      ]);
     } catch {
       /* render empty; the grid still works */
     }
@@ -39,7 +44,11 @@ export default async function Manage() {
           </Link>
         </div>
 
-        <ManageGrid authed={authed} initialItems={items} />
+        <ManageGrid
+          authed={authed}
+          initialItems={items}
+          galleryHidden={galleryHidden}
+        />
       </div>
     </main>
   );

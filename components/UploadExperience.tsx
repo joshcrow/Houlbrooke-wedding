@@ -80,7 +80,20 @@ export default function UploadExperience() {
   function openPicker() {
     if (!name.trim()) {
       setNameError(true);
-      nameInputRef.current?.focus();
+      const field = nameInputRef.current;
+      field?.scrollIntoView({ block: "center", behavior: "smooth" });
+      field?.focus();
+      // A little shake to draw the eye (replays on every empty tap).
+      field?.animate(
+        [
+          { transform: "translateX(0)" },
+          { transform: "translateX(-7px)" },
+          { transform: "translateX(7px)" },
+          { transform: "translateX(-5px)" },
+          { transform: "translateX(0)" },
+        ],
+        { duration: 380, easing: "ease-in-out" },
+      );
       return;
     }
     inputRef.current?.click();
@@ -246,8 +259,11 @@ export default function UploadExperience() {
           }`}
         />
         {nameError && (
-          <span className="mt-1 block text-sm text-blue-deep">
-            Please add your name first.
+          <span
+            role="alert"
+            className="pop-in mt-2 block rounded-xl bg-lemon-soft px-3 py-2 text-sm font-medium text-blue-deep"
+          >
+            Add your name first so the couple knows who to thank.
           </span>
         )}
       </label>

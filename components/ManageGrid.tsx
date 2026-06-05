@@ -12,17 +12,21 @@ function formatSize(bytes: number): string {
 export default function ManageGrid({
   authed,
   initialItems,
+  galleryHidden,
 }: {
   authed: boolean;
   initialItems: MediaItem[];
+  galleryHidden: boolean;
 }) {
   const [passcode, setPasscode] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [items, setItems] = useState<MediaItem[]>(initialItems);
-  const [deleting, setDeleting] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [origin, setOrigin] = useState("");
+  const [hideGallery, setHideGallery] = useState(galleryHidden);
+  const [togglingGallery, setTogglingGallery] = useState(false);
 
   useEffect(() => setOrigin(window.location.origin), []);
 
@@ -41,7 +45,6 @@ export default function ManageGrid({
         setError(data.error ?? "Couldn't unlock.");
         return;
       }
-      // Session cookie is set — reload so the server renders the album.
       window.location.reload();
     } catch {
       setError("Network error — try again.");
@@ -51,24 +54,61 @@ export default function ManageGrid({
   }
 
   async function remove(item: MediaItem) {
-    if (!window.confirm("Permanently remove this from the album?")) return;
-    setDeleting(item.url);
+    if (!window.confirm("Permanently delete this? It can't be undone.")) return;
+    setBusy(item.url);
     try {
       const res = await fetch("/api/owner/delete", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ url: item.url }),
       });
-      if (res.status === 401) {
-        window.location.reload(); // session expired → back to passcode
-        return;
-      }
+      if (res.status === 401) return void window.location.reload();
       if (!res.ok) throw new Error(await res.text());
       setItems((prev) => prev.filter((it) => it.url !== item.url));
     } catch {
-      window.alert("Couldn't remove that — try again.");
+      window.alert("Couldn't delete that — try again.");
     } finally {
-      setDeleting(null);
+      setBusy(null);
+    }
+  }
+
+  async function toggleHide(item: MediaItem) {
+    setBusy(item.url);
+    try {
+      const res = await fetch("/api/owner/hide", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pathname: item.pathname, hidden: !item.hidden }),
+      });
+      if (res.status === 401) return void window.location.reload();
+      if (!res.ok) throw new Error(await res.text());
+      setItems((prev) =>
+        prev.map((it) =>
+          it.url === item.url ? { ...it, hidden: !it.hidden } : it,
+        ),
+      );
+    } catch {
+      window.alert("Couldn't update that — try again.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function toggleGallery() {
+    setTogglingGallery(true);
+    try {
+      const res = await fetch("/api/owner/gallery-visibility", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ hidden: !hideGallery }),
+      });
+      if (res.status === 401) return void window.location.reload();
+      if (!res.ok) throw new Error(await res.text());
+      setHideGallery((v) => !v);
+    } catch {
+      window.alert("Couldn't update the gallery — try again.");
+    } finally {
+      setTogglingGallery(false);
     }
   }
 
@@ -111,7 +151,7 @@ export default function ManageGrid({
 
   return (
     <div>
-      <div className="mb-6 rounded-2xl bg-white/60 p-5 shadow-sm">
+      <div className="mb-4 rounded-2xl bg-white/60 p-5 shadow-sm">
         <p className="text-ink/80">
           <strong>{items.length}</strong>{" "}
           {items.length === 1 ? "item" : "items"} · {formatSize(totalBytes)}{" "}
@@ -135,17 +175,39 @@ export default function ManageGrid({
         </div>
 
         <p className="mt-3 text-xs text-ink/55">
-          The zip ends with a manifest listing every file (and flags any it
-          couldn&apos;t include). For a very large archive, the export script is
-          the verified backup. Removing an item here is permanent.
+          The zip ends with a manifest listing every file. Deleting is permanent;
+          hiding keeps the photo (and its place in the download) but removes it
+          from the public gallery.
         </p>
+      </div>
+
+      {/* Whole-gallery switch — flips instantly, no redeploy. */}
+      <div className="mb-6 flex items-center justify-between gap-3 rounded-2xl bg-white/60 p-4 shadow-sm">
+        <div>
+          <p className="font-medium text-ink">Public gallery</p>
+          <p className="text-xs text-ink/55">
+            {hideGallery
+              ? "Hidden from guests right now"
+              : "Visible to anyone with the link"}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={toggleGallery}
+          disabled={togglingGallery}
+          className="shrink-0 rounded-full border-2 border-blue-deep/70 px-5 py-2 text-sm font-semibold text-blue-deep disabled:opacity-50"
+        >
+          {togglingGallery ? "…" : hideGallery ? "Show gallery" : "Hide gallery"}
+        </button>
       </div>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
         {items.map((item) => (
           <figure
             key={item.url}
-            className="relative aspect-square overflow-hidden rounded-2xl bg-white/60 shadow-sm"
+            className={`relative aspect-square overflow-hidden rounded-2xl bg-white/60 shadow-sm ${
+              item.hidden ? "opacity-50" : ""
+            }`}
           >
             {item.isVideo ? (
               <video
@@ -164,19 +226,31 @@ export default function ManageGrid({
                 className="h-full w-full object-cover"
               />
             )}
-            {item.uploader && item.uploader !== "guest" && (
-              <figcaption className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-ink/70 to-transparent px-2 pb-1.5 pt-5 text-xs capitalize text-cream">
-                {item.uploader.replace(/-/g, " ")}
-              </figcaption>
+
+            {item.hidden && (
+              <span className="absolute left-2 top-2 rounded-full bg-ink/75 px-2 py-0.5 text-[10px] text-cream">
+                Hidden
+              </span>
             )}
-            <button
-              type="button"
-              onClick={() => remove(item)}
-              disabled={deleting === item.url}
-              className="absolute right-2 top-2 rounded-full bg-ink/75 px-3 py-1.5 text-xs text-cream disabled:opacity-50"
-            >
-              {deleting === item.url ? "…" : "Remove"}
-            </button>
+
+            <div className="absolute inset-x-0 bottom-0 flex items-center justify-between gap-1 bg-gradient-to-t from-ink/80 to-transparent px-2 pb-2 pt-6">
+              <button
+                type="button"
+                onClick={() => toggleHide(item)}
+                disabled={busy === item.url}
+                className="rounded-full bg-cream/90 px-3 py-1 text-xs font-medium text-ink disabled:opacity-50"
+              >
+                {busy === item.url ? "…" : item.hidden ? "Show" : "Hide"}
+              </button>
+              <button
+                type="button"
+                onClick={() => remove(item)}
+                disabled={busy === item.url}
+                className="rounded-full bg-ink/80 px-3 py-1 text-xs text-cream disabled:opacity-50"
+              >
+                Delete
+              </button>
+            </div>
           </figure>
         ))}
       </div>

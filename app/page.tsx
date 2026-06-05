@@ -2,8 +2,14 @@ import Link from "next/link";
 import ShareLink from "@/components/ShareLink";
 import UploadExperience from "@/components/UploadExperience";
 import { COUPLE } from "@/lib/config";
+import { isGalleryHidden } from "@/lib/gallerySetting";
 
-export default function Home() {
+// Dynamic so the gallery-visibility toggle is reflected without a redeploy.
+export const dynamic = "force-dynamic";
+
+export default async function Home() {
+  const galleryHidden = await isGalleryHidden();
+
   return (
     <main className="bg-wash flex min-h-screen flex-col items-center px-5 py-10">
       <header className="mb-8 mt-4 text-center">
@@ -18,12 +24,14 @@ export default function Home() {
 
       <UploadExperience />
 
-      <Link
-        href="/gallery"
-        className="mt-6 flex w-full max-w-xl items-center justify-center rounded-2xl border-2 border-blue-deep/70 bg-white/50 px-6 py-3.5 text-lg font-medium text-blue-deep transition active:scale-[0.99]"
-      >
-        See gallery
-      </Link>
+      {!galleryHidden && (
+        <Link
+          href="/gallery"
+          className="mt-6 flex w-full max-w-xl items-center justify-center rounded-2xl border-2 border-blue-deep/70 bg-white/50 px-6 py-3.5 text-lg font-medium text-blue-deep transition active:scale-[0.99]"
+        >
+          See gallery
+        </Link>
+      )}
 
       <ShareLink />
 

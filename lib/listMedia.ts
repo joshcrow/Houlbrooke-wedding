@@ -1,5 +1,6 @@
 import { list } from "@vercel/blob";
 import { MEDIA_PREFIX } from "@/lib/config";
+import { getHiddenSet } from "@/lib/hidden";
 
 const VIDEO_RE = /\.(mp4|mov|webm|m4v)$/i;
 
@@ -10,6 +11,7 @@ export interface MediaItem {
   isVideo: boolean;
   uploader: string;
   size: number;
+  hidden: boolean; // hidden from the public gallery (still kept + exported)
 }
 
 // Page through the whole store (list() caps at 1000 per call and sorts by
@@ -34,6 +36,8 @@ export async function listAllMedia(): Promise<MediaItem[]> {
       new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime(),
   );
 
+  const hidden = await getHiddenSet();
+
   return blobs.map((b) => {
     const rawUploader = b.pathname.replace(MEDIA_PREFIX, "").split("/")[0] ?? "";
     let uploader = rawUploader;
@@ -49,6 +53,7 @@ export async function listAllMedia(): Promise<MediaItem[]> {
       isVideo: VIDEO_RE.test(b.pathname),
       uploader,
       size: b.size,
+      hidden: hidden.has(b.pathname),
     };
   });
 }
