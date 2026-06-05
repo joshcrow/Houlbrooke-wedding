@@ -141,11 +141,11 @@ export default function ManageGrid({
         </p>
       </div>
 
-      <div className="columns-2 gap-3 sm:columns-3 md:columns-4 [&>*]:mb-3">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
         {items.map((item) => (
           <figure
             key={item.url}
-            className="relative break-inside-avoid overflow-hidden rounded-2xl bg-white/60 shadow-sm"
+            className="relative aspect-square overflow-hidden rounded-2xl bg-white/60 shadow-sm"
           >
             {item.isVideo ? (
               <video
@@ -153,14 +153,19 @@ export default function ManageGrid({
                 controls
                 preload="metadata"
                 playsInline
-                className="w-full"
+                className="h-full w-full object-cover"
               />
             ) : (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={item.url} alt="" loading="lazy" className="w-full" />
+              <img
+                src={item.url}
+                alt=""
+                loading="lazy"
+                className="h-full w-full object-cover"
+              />
             )}
             {item.uploader && item.uploader !== "guest" && (
-              <figcaption className="px-3 py-2 text-xs capitalize text-ink/55">
+              <figcaption className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-ink/70 to-transparent px-2 pb-1.5 pt-5 text-xs capitalize text-cream">
                 {item.uploader.replace(/-/g, " ")}
               </figcaption>
             )}

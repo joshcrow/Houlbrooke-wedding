@@ -26,6 +26,13 @@ export default function Home() {
       </Link>
 
       <ShareLink />
+
+      <Link
+        href="/manage"
+        className="mt-8 text-xs text-ink/40 underline underline-offset-4"
+      >
+        Couple? Manage the album
+      </Link>
     </main>
   );
 }

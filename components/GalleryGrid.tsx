@@ -16,6 +16,7 @@ function pretty(uploader: string): string {
 export default function GalleryGrid({ items }: { items: GalleryItem[] }) {
   const [openIndex, setOpenIndex] = useState<number | null>(null);
   const [previewBroke, setPreviewBroke] = useState(false);
+  const [failed, setFailed] = useState<Record<string, boolean>>({});
 
   const close = useCallback(() => setOpenIndex(null), []);
   const step = useCallback(
@@ -50,43 +51,50 @@ export default function GalleryGrid({ items }: { items: GalleryItem[] }) {
 
   return (
     <>
-      <div className="columns-2 gap-3 sm:columns-3 md:columns-4 [&>*]:mb-3">
+      {/* Uniform square tiles: every tile reserves equal space, so a slow or
+          unrenderable item can never collapse and shift the layout. */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
         {items.map((item, i) => (
           <button
             key={item.url}
             type="button"
             onClick={() => setOpenIndex(i)}
-            className="block w-full break-inside-avoid overflow-hidden rounded-2xl bg-white/60 text-left shadow-sm transition active:scale-[0.99]"
+            className="relative aspect-square overflow-hidden rounded-2xl bg-white/60 shadow-sm transition active:scale-[0.99]"
           >
-            <span className="relative block">
-              {item.isVideo ? (
-                <video
-                  src={item.url}
-                  preload="metadata"
-                  muted
-                  playsInline
-                  className="w-full"
-                />
-              ) : (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={item.url}
-                  alt={item.uploader ? `Shared by ${pretty(item.uploader)}` : ""}
-                  loading="lazy"
-                  className="w-full"
-                />
-              )}
-              {item.isVideo && (
-                <span className="pointer-events-none absolute inset-0 flex items-center justify-center">
-                  <svg width="40" height="40" viewBox="0 0 24 24" aria-hidden>
-                    <circle cx="12" cy="12" r="12" fill="rgba(52,67,94,0.55)" />
-                    <path d="M9 8l7 4-7 4z" fill="#FBF7EC" />
-                  </svg>
-                </span>
-              )}
-            </span>
+            {failed[item.url] ? (
+              <span className="flex h-full w-full flex-col items-center justify-center px-2 text-center text-xs text-ink/55">
+                Photo — tap to view
+              </span>
+            ) : item.isVideo ? (
+              <video
+                src={item.url}
+                preload="metadata"
+                muted
+                playsInline
+                className="h-full w-full object-cover"
+              />
+            ) : (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={item.url}
+                alt={item.uploader ? `Shared by ${pretty(item.uploader)}` : ""}
+                loading="lazy"
+                onError={() => setFailed((f) => ({ ...f, [item.url]: true }))}
+                className="h-full w-full object-cover"
+              />
+            )}
+
+            {item.isVideo && !failed[item.url] && (
+              <span className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                <svg width="40" height="40" viewBox="0 0 24 24" aria-hidden>
+                  <circle cx="12" cy="12" r="12" fill="rgba(52,67,94,0.55)" />
+                  <path d="M9 8l7 4-7 4z" fill="#FBF7EC" />
+                </svg>
+              </span>
+            )}
+
             {item.uploader && item.uploader !== "guest" && (
-              <span className="block px-3 py-2 text-xs capitalize text-ink/55">
+              <span className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-ink/70 to-transparent px-2 pb-1.5 pt-5 text-left text-xs capitalize text-cream">
                 {pretty(item.uploader)}
               </span>
             )}
