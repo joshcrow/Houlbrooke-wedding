@@ -1,4 +1,5 @@
 import Link from "next/link";
+import ShareLink from "@/components/ShareLink";
 import UploadExperience from "@/components/UploadExperience";
 import { COUPLE } from "@/lib/config";
 
@@ -23,6 +24,8 @@ export default function Home() {
       >
         See gallery
       </Link>
+
+      <ShareLink />
     </main>
   );
 }
