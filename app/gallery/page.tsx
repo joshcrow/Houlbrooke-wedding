@@ -1,43 +1,17 @@
-import { list } from "@vercel/blob";
 import Link from "next/link";
 import GalleryGrid, { type GalleryItem } from "@/components/GalleryGrid";
-import { COUPLE, MEDIA_PREFIX } from "@/lib/config";
+import { COUPLE } from "@/lib/config";
+import { listAllMedia } from "@/lib/listMedia";
 
 // Always fresh — new uploads should show on reload.
 export const dynamic = "force-dynamic";
-
-const VIDEO_RE = /\.(mp4|mov|webm|m4v)$/i;
 
 export default async function Gallery() {
   let items: GalleryItem[] = [];
   let error = "";
 
   try {
-    // list() returns up to 1000 sorted by pathname, so page through the whole
-    // store (cap at 10k) before sorting by date — otherwise late-alphabet
-    // uploaders would be dropped once there are more than 1000 files.
-    const blobs: { url: string; downloadUrl: string; pathname: string; uploadedAt: Date }[] =
-      [];
-    let cursor: string | undefined;
-    do {
-      const res = await list({ prefix: MEDIA_PREFIX, limit: 1000, cursor });
-      blobs.push(...res.blobs);
-      cursor = res.cursor;
-    } while (cursor && blobs.length < 10000);
-
-    blobs.sort(
-      (a, b) =>
-        new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime(),
-    );
-
-    items = blobs.map((blob) => ({
-      url: blob.url,
-      downloadUrl: blob.downloadUrl,
-      isVideo: VIDEO_RE.test(blob.pathname),
-      uploader: decodeURIComponent(
-        blob.pathname.replace(MEDIA_PREFIX, "").split("/")[0] ?? "",
-      ),
-    }));
+    items = await listAllMedia();
   } catch {
     error = "Gallery isn't ready yet — check back once photos are added.";
   }

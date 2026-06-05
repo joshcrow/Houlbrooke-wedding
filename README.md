@@ -60,7 +60,21 @@ Two ways to handle it, if the gallery matters:
 
 ---
 
-## After the wedding: download everything
+## The owner page (`/manage`) — for the couple, no terminal
+
+Set an `OWNER_PASSCODE` env var in Vercel (something only the bride & groom
+know), then redeploy. They visit **`/manage`**, enter the passcode, and can:
+
+- **Download everything as one `.zip`** — one click, straight from the browser.
+- **Remove any photo/video** from the album (no time limit).
+- **Copy the family share link** to the gallery.
+
+This is the no-terminal path. One caveat: the one-click zip runs inside a single
+request, so a *very* large archive (lots of HD video) can exceed the function's
+time limit. For typical photo-heavy sets it's fine; if it ever stalls, fall back
+to the bulk-export script below.
+
+## After the wedding: download everything (backup / power path)
 
 Grab the `BLOB_READ_WRITE_TOKEN` from Vercel → Storage → your Blob store →
 `.env.local` tab, then:
@@ -69,8 +83,9 @@ Grab the `BLOB_READ_WRITE_TOKEN` from Vercel → Storage → your Blob store →
 BLOB_READ_WRITE_TOKEN=vercel_blob_rw_xxx npm run export
 ```
 
-Downloads every original file into `./export/`, organized by uploader — ready
-to hand to Katie & Conner.
+Downloads every original file into `./export/`, organized by uploader, **and**
+bundles them into a single `wedding-photos-<date>.zip` — ready to drop into a
+Google Drive folder the couple owns.
 
 ---
 

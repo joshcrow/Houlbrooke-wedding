@@ -6,6 +6,7 @@
 //
 // Get the token from Vercel → Storage → your Blob store → ".env.local" tab.
 import { list } from "@vercel/blob";
+import archiver from "archiver";
 import { createWriteStream } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
@@ -39,4 +40,18 @@ do {
   cursor = res.cursor;
 } while (cursor);
 
-console.log(`Done. Downloaded ${count} files into ./${outRoot}/`);
+console.log(`Downloaded ${count} files into ./${outRoot}/`);
+
+// Bundle everything into a single archive for an easy handoff to Google Drive.
+const zipName = `wedding-photos-${new Date().toISOString().slice(0, 10)}.zip`;
+await new Promise((resolve, reject) => {
+  const output = createWriteStream(zipName);
+  const archive = archiver("zip", { store: true }); // already-compressed media
+  output.on("close", resolve);
+  archive.on("error", reject);
+  archive.pipe(output);
+  archive.directory(`${outRoot}/`, false);
+  archive.finalize();
+});
+
+console.log(`Zipped everything into ./${zipName}`);
