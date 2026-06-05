@@ -9,7 +9,7 @@ import { fileExtension, slugify } from "@/lib/slug";
 // videos and full-size photos survive flaky venue wifi.
 const MULTIPART_THRESHOLD = 8 * 1024 * 1024;
 
-type Status = "processing" | "uploading" | "done" | "error";
+type Status = "processing" | "uploading" | "done" | "error" | "removing";
 
 interface Item {
   id: string;
@@ -19,6 +19,7 @@ interface Item {
   status: Status;
   progress: number;
   error?: string;
+  url?: string; // the public blob URL, once uploaded (needed to remove it)
 }
 
 const NAME_KEY = "kc-uploader-name";
@@ -133,7 +134,7 @@ export default function UploadExperience() {
 
       patch(item.id, { status: "uploading", preview });
 
-      await upload(pathname, file, {
+      const result = await upload(pathname, file, {
         access: "public",
         handleUploadUrl: "/api/upload",
         // Empty on some iPhone files — let Blob infer from the .ext in pathname.
@@ -144,7 +145,7 @@ export default function UploadExperience() {
       });
 
       filesRef.current.delete(item.id);
-      patch(item.id, { status: "done", progress: 100 });
+      patch(item.id, { status: "done", progress: 100, url: result.url });
     } catch (err) {
       // Surface the true cause in the console for debugging; keep the on-screen
       // message friendly for guests.
@@ -167,6 +168,26 @@ export default function UploadExperience() {
     inputRef.current?.click();
   }
 
+  async function removeItem(item: Item) {
+    if (!item.url) return;
+    if (!window.confirm("Remove this photo from the album?")) return;
+
+    patch(item.id, { status: "removing" });
+    try {
+      const res = await fetch("/api/delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: item.url }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      setItems((prev) => prev.filter((it) => it.id !== item.id));
+    } catch (err) {
+      console.error("Remove failed:", err);
+      patch(item.id, { status: "done" });
+      window.alert("Couldn't remove that photo — please try again.");
+    }
+  }
+
   const doneCount = items.filter((i) => i.status === "done").length;
   const activeCount = items.filter(
     (i) => i.status === "uploading" || i.status === "processing",
@@ -178,7 +199,7 @@ export default function UploadExperience() {
     <div className="w-full max-w-xl">
       <label className="mb-3 block">
         <span className="mb-1 block text-sm font-medium text-blue-deep">
-          Your first name
+          Enter your first and last name
         </span>
         <input
           value={name}
@@ -219,8 +240,15 @@ export default function UploadExperience() {
         </div>
       )}
 
+      {doneCount > 0 && (
+        <p className="mt-6 text-center text-sm text-ink/60">
+          These are now in the album. Tap × on any photo you didn&apos;t mean to
+          share.
+        </p>
+      )}
+
       {items.length > 0 && (
-        <ul className="mt-6 grid grid-cols-3 gap-3 sm:grid-cols-4">
+        <ul className="mt-3 grid grid-cols-3 gap-3 sm:grid-cols-4">
           {visibleItems.map((item) => (
             <li
               key={item.id}
@@ -244,17 +272,11 @@ export default function UploadExperience() {
                 ))}
 
               <div className="absolute inset-0 flex items-center justify-center">
-                {item.status === "done" && (
-                  <span className="rounded-full bg-blue-deep/85 px-2 py-1 text-xs text-cream">
-                    ✓
-                  </span>
-                )}
                 {(item.status === "uploading" ||
-                  item.status === "processing") && (
+                  item.status === "processing" ||
+                  item.status === "removing") && (
                   <span className="rounded-full bg-ink/60 px-2 py-1 text-xs text-cream">
-                    {item.status === "processing"
-                      ? "…"
-                      : `${item.progress}%`}
+                    {item.status === "uploading" ? `${item.progress}%` : "…"}
                   </span>
                 )}
                 {item.status === "error" && (
@@ -268,6 +290,17 @@ export default function UploadExperience() {
                   </button>
                 )}
               </div>
+
+              {item.status === "done" && (
+                <button
+                  type="button"
+                  onClick={() => removeItem(item)}
+                  aria-label="Remove this photo from the album"
+                  className="absolute right-1.5 top-1.5 flex h-7 w-7 items-center justify-center rounded-full bg-ink/70 text-base leading-none text-cream"
+                >
+                  ×
+                </button>
+              )}
             </li>
           ))}
         </ul>

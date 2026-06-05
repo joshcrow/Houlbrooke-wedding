@@ -21,7 +21,7 @@ export default function Home() {
         href="/gallery"
         className="mt-6 flex w-full max-w-xl items-center justify-center rounded-2xl border-2 border-blue-deep/70 bg-white/50 px-6 py-3.5 text-lg font-medium text-blue-deep transition active:scale-[0.99]"
       >
-        See everyone&apos;s photos
+        See gallery
       </Link>
     </main>
   );
