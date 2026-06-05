@@ -71,3 +71,44 @@ for whoever runs this (Josh). Replace the bracketed placeholders before sending.
   the Vercel project / Blob store.
 - The photos live in **one place** (Vercel Blob) until you export — don't delete
   the project or downgrade off Pro before the backup exists.
+
+---
+
+## Optional: automatic Google Drive backup
+
+A cron job (`/api/cron/backup`, scheduled in `vercel.json`, every 15 min)
+incrementally copies each new photo/video to a Google Drive folder. It is fully
+isolated and **no-ops until configured** — leaving the env vars blank disables it
+with zero effect on the rest of the app.
+
+**One-time setup (~15 min):**
+
+1. **Google Cloud Console** → create/select a project → **APIs & Services →
+   Library** → enable **Google Drive API**.
+2. **OAuth consent screen** → External → fill in name/email. **Publish the app**
+   ("In production") — otherwise the refresh token expires after 7 days.
+3. **Credentials → Create OAuth client ID → Web application**. Add redirect URI
+   `https://developers.google.com/oauthplayground`. Copy the **Client ID** and
+   **Client secret**.
+4. Open **https://developers.google.com/oauthplayground** → gear icon → check
+   "Use your own OAuth credentials" → paste the Client ID/secret. In the scope
+   box enter `https://www.googleapis.com/auth/drive.file` → **Authorize APIs**
+   (sign in as the account that should own the backup) → **Exchange authorization
+   code for tokens** → copy the **Refresh token**.
+   - If uploads later 403, redo this with scope `https://www.googleapis.com/auth/drive`.
+5. Make/open the destination **Drive folder**; its URL ends in
+   `/folders/<FOLDER_ID>` — copy that id.
+6. In **Vercel → Settings → Environment Variables**, set: `CRON_SECRET` (any
+   random string), `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`,
+   `GOOGLE_REFRESH_TOKEN`, `GDRIVE_FOLDER_ID`. **Redeploy.**
+
+**Verify:** trigger a run by hand and watch the folder fill:
+
+```bash
+curl -H "Authorization: Bearer $CRON_SECRET" https://<your-url>/api/cron/backup
+# -> {"ok":true,"backedUp":N,"remaining":M,...}
+```
+
+Notes: backs up new files only (tracked with `synced/` markers), ~25 per run,
+files over 200 MB are skipped (use the export script for those), and it never
+touches or deletes the originals.
