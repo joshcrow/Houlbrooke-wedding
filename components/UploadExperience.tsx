@@ -168,9 +168,8 @@ export default function UploadExperience() {
       <button
         type="button"
         onClick={() => inputRef.current?.click()}
-        className="flex w-full items-center justify-center gap-3 rounded-3xl bg-blue-deep px-6 py-6 text-2xl font-semibold text-cream shadow-card transition active:scale-[0.99]"
+        className="w-full rounded-2xl bg-blue-deep px-6 py-4 text-lg font-semibold text-cream shadow-card transition active:scale-[0.99]"
       >
-        <span className="text-3xl">📷</span>
         Add Photos &amp; Videos
       </button>
 

@@ -50,7 +50,7 @@ export default async function Gallery() {
 
         {!error && blobs.length === 0 && (
           <p className="text-center text-ink/60">
-            No photos yet — be the first to add one! 🍋
+            No photos yet — be the first to add one!
           </p>
         )}
 
