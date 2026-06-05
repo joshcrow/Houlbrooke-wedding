@@ -15,7 +15,8 @@ const outDir = "qr";
 await mkdir(outDir, { recursive: true });
 
 const opts = {
-  errorCorrectionLevel: "M",
+  // Q = recovers from ~25% damage; more forgiving of print smudges & dim light.
+  errorCorrectionLevel: "Q",
   margin: 2,
   color: { dark: "#3E5C8A", light: "#FBF7EC" }, // blue on cream, on theme
   width: 1200,
@@ -24,6 +25,15 @@ const opts = {
 await QRCode.toFile(`${outDir}/wedding-qr.png`, url, opts);
 const svg = await QRCode.toString(url, { ...opts, type: "svg" });
 await writeFile(`${outDir}/wedding-qr.svg`, svg);
+
+// High-contrast fallback (pure black on white) — scans most reliably in poor
+// light. Use this one if the themed code is ever slow to scan.
+await QRCode.toFile(`${outDir}/wedding-qr-hicontrast.png`, url, {
+  errorCorrectionLevel: "Q",
+  margin: 2,
+  color: { dark: "#000000", light: "#FFFFFF" },
+  width: 1200,
+});
 
 // A simple printable table card wrapping the QR.
 const card = `<!doctype html><html><head><meta charset="utf-8">
@@ -40,7 +50,7 @@ const card = `<!doctype html><html><head><meta charset="utf-8">
   p.foot { font-size:13pt; margin-top:18pt; }
   .url { font-size:9pt; color:#6E89B7; margin-top:6pt; word-break:break-all; }
 </style></head><body><div class="card">
-  <p class="sub">🍋 Katie &amp; Conner 🍋</p>
+  <p class="sub">Katie &amp; Conner</p>
   <h1>Share Your Photos</h1>
   <img src="./wedding-qr.png" alt="QR code">
   <p class="foot">Scan with your camera<br>No app or account needed</p>

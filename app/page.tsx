@@ -23,10 +23,6 @@ export default function Home() {
       >
         See everyone&apos;s photos
       </Link>
-
-      <footer className="mt-10 text-center text-xs text-ink/40">
-        Made with 💛 for {COUPLE.names}
-      </footer>
     </main>
   );
 }

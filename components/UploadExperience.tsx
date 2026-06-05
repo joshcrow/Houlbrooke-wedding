@@ -23,6 +23,33 @@ interface Item {
 
 const NAME_KEY = "kc-uploader-name";
 const CONCURRENCY = 3;
+// Cap rendered thumbnails so a guest selecting hundreds of photos can't run the
+// phone out of memory. Newest items render first; the rest still upload.
+const MAX_VISIBLE_TILES = 30;
+
+// localStorage throws in iOS Private Mode — never let that break the page.
+function safeGet(key: string): string {
+  try {
+    return localStorage.getItem(key) ?? "";
+  } catch {
+    return "";
+  }
+}
+function safeSet(key: string, value: string): void {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    /* ignore */
+  }
+}
+// crypto.randomUUID is missing on older iOS Safari; fall back gracefully.
+function newId(): string {
+  try {
+    return crypto.randomUUID();
+  } catch {
+    return `id-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  }
+}
 
 export default function UploadExperience() {
   const [name, setName] = useState("");
@@ -31,14 +58,19 @@ export default function UploadExperience() {
   // Keep the actual File for each in-flight item so "Retry" re-uploads the
   // exact same file instead of re-opening the picker (avoids duplicates).
   const filesRef = useRef<Map<string, File>>(new Map());
+  // Track created object URLs so we can free them when the page unmounts.
+  const urlsRef = useRef<string[]>([]);
 
   useEffect(() => {
-    setName(localStorage.getItem(NAME_KEY) ?? "");
+    setName(safeGet(NAME_KEY));
+    return () => {
+      for (const url of urlsRef.current) URL.revokeObjectURL(url);
+    };
   }, []);
 
   function rememberName(value: string) {
     setName(value);
-    localStorage.setItem(NAME_KEY, value.trim());
+    safeSet(NAME_KEY, value.trim());
   }
 
   function patch(id: string, next: Partial<Item>) {
@@ -54,7 +86,7 @@ export default function UploadExperience() {
 
     const queued: { item: Item; file: File }[] = files.map((file) => ({
       item: {
-        id: crypto.randomUUID(),
+        id: newId(),
         name: file.name,
         isVideo: file.type.startsWith("video/"),
         status: "processing",
@@ -92,6 +124,7 @@ export default function UploadExperience() {
       }
 
       const preview = URL.createObjectURL(file);
+      urlsRef.current.push(preview);
       const ext = fileExtension(file.name, item.isVideo ? "mp4" : "jpg");
       const rawBase = file.name.replace(/\.[^.]+$/, "");
       const base =
@@ -138,6 +171,8 @@ export default function UploadExperience() {
   const activeCount = items.filter(
     (i) => i.status === "uploading" || i.status === "processing",
   ).length;
+  const visibleItems = items.slice(0, MAX_VISIBLE_TILES);
+  const hiddenCount = items.length - visibleItems.length;
 
   return (
     <div className="w-full max-w-xl">
@@ -148,7 +183,7 @@ export default function UploadExperience() {
         <input
           value={name}
           onChange={(e) => rememberName(e.target.value)}
-          placeholder="So Katie & Conner can say thanks 💛"
+          placeholder="So Katie & Conner can say thanks"
           className="w-full rounded-2xl border border-blue-soft/60 bg-white/70 px-4 py-3 text-lg text-ink outline-none transition focus:border-blue-deep focus:ring-2 focus:ring-blue-soft/50"
         />
       </label>
@@ -174,19 +209,19 @@ export default function UploadExperience() {
       </button>
 
       <p className="mt-3 text-center text-sm text-ink/60">
-        Pick as many as you like — they upload automatically.
+        Pick as many as you like. Keep this page open until each photo shows a
+        check.
       </p>
 
       {doneCount > 0 && activeCount === 0 && (
         <div className="pop-in mt-6 rounded-2xl bg-lemon-soft/70 px-5 py-4 text-center text-lg text-blue-deep">
-          🎉 Thank you{name ? `, ${name.trim()}` : ""}! {doneCount}{" "}
-          {doneCount === 1 ? "memory" : "memories"} added. Add more anytime.
+          Thank you{name ? `, ${name.trim()}` : ""}. Add more photos anytime.
         </div>
       )}
 
       {items.length > 0 && (
         <ul className="mt-6 grid grid-cols-3 gap-3 sm:grid-cols-4">
-          {items.map((item) => (
+          {visibleItems.map((item) => (
             <li
               key={item.id}
               className="pop-in relative aspect-square overflow-hidden rounded-2xl bg-white/60 shadow-sm"
@@ -236,6 +271,12 @@ export default function UploadExperience() {
             </li>
           ))}
         </ul>
+      )}
+
+      {hiddenCount > 0 && (
+        <p className="mt-3 text-center text-sm text-ink/60">
+          + {hiddenCount} more uploading below the fold.
+        </p>
       )}
     </div>
   );
