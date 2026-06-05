@@ -12,8 +12,17 @@ export default async function Gallery() {
   let error = "";
 
   try {
-    const res = await list({ prefix: MEDIA_PREFIX, limit: 1000 });
-    blobs = res.blobs.sort(
+    // list() returns up to 1000 sorted by pathname, so page through the whole
+    // store (cap at 10k) before sorting by date — otherwise late-alphabet
+    // uploaders would be dropped once there are more than 1000 files.
+    let cursor: string | undefined;
+    do {
+      const res = await list({ prefix: MEDIA_PREFIX, limit: 1000, cursor });
+      blobs.push(...res.blobs);
+      cursor = res.cursor;
+    } while (cursor && blobs.length < 10000);
+
+    blobs.sort(
       (a, b) =>
         new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime(),
     );

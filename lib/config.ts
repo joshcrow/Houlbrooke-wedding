@@ -17,15 +17,21 @@ export const SITE_URL =
 // ~1 GB free Blob allotment. Raise this ceiling if needed.
 export const MAX_FILE_BYTES = 1024 * 1024 * 1024; // 1 GB per file
 
+// Explicit list (no wildcards — Vercel may reject malformed MIME entries).
+// Blob also infers the type from the file extension in the pathname, so the
+// extension we attach is the real safety net for odd iPhone/Android types.
 export const ALLOWED_CONTENT_TYPES = [
   "image/jpeg",
   "image/png",
   "image/webp",
+  "image/gif",
   "image/heic",
   "image/heif",
   "video/mp4",
   "video/quicktime",
   "video/webm",
+  "video/x-m4v",
+  "video/3gpp",
 ];
 
 export const MEDIA_PREFIX = "media/";

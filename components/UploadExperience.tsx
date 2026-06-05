@@ -28,6 +28,9 @@ export default function UploadExperience() {
   const [name, setName] = useState("");
   const [items, setItems] = useState<Item[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
+  // Keep the actual File for each in-flight item so "Retry" re-uploads the
+  // exact same file instead of re-opening the picker (avoids duplicates).
+  const filesRef = useRef<Map<string, File>>(new Map());
 
   useEffect(() => {
     setName(localStorage.getItem(NAME_KEY) ?? "");
@@ -60,6 +63,7 @@ export default function UploadExperience() {
       file,
     }));
 
+    for (const q of queued) filesRef.current.set(q.item.id, q.file);
     setItems((prev) => [...queued.map((q) => q.item), ...prev]);
 
     // Upload with a small concurrency pool so bad venue wifi doesn't choke.
@@ -89,7 +93,9 @@ export default function UploadExperience() {
 
       const preview = URL.createObjectURL(file);
       const ext = fileExtension(file.name, item.isVideo ? "mp4" : "jpg");
-      const base = file.name.replace(/\.[^.]+$/, "").slice(0, 60) || "photo";
+      const rawBase = file.name.replace(/\.[^.]+$/, "");
+      const base =
+        rawBase.replace(/[^\w.-]+/g, "_").slice(0, 60) || "photo";
       const pathname = `${MEDIA_PREFIX}${uploaderSlug}/${base}.${ext}`;
 
       patch(item.id, { status: "uploading", preview });
@@ -97,12 +103,14 @@ export default function UploadExperience() {
       await upload(pathname, file, {
         access: "public",
         handleUploadUrl: "/api/upload",
-        contentType: file.type,
+        // Empty on some iPhone files — let Blob infer from the .ext in pathname.
+        contentType: file.type || undefined,
         multipart: item.isVideo || file.size > MULTIPART_THRESHOLD,
         onUploadProgress: ({ percentage }) =>
           patch(item.id, { progress: Math.round(percentage) }),
       });
 
+      filesRef.current.delete(item.id);
       patch(item.id, { status: "done", progress: 100 });
     } catch {
       patch(item.id, {
@@ -113,7 +121,13 @@ export default function UploadExperience() {
   }
 
   function retry(item: Item) {
-    // Re-open the picker; simplest reliable retry for a non-technical guest.
+    const file = filesRef.current.get(item.id);
+    if (file) {
+      patch(item.id, { status: "processing", progress: 0, error: undefined });
+      void uploadOne(item, file, slugify(name));
+      return;
+    }
+    // File no longer held (e.g. after a reload) — fall back to the picker.
     inputRef.current?.click();
   }
 
