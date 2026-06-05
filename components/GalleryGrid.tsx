@@ -58,23 +58,33 @@ export default function GalleryGrid({ items }: { items: GalleryItem[] }) {
             onClick={() => setOpenIndex(i)}
             className="block w-full break-inside-avoid overflow-hidden rounded-2xl bg-white/60 text-left shadow-sm transition active:scale-[0.99]"
           >
-            {item.isVideo ? (
-              <video
-                src={item.url}
-                preload="metadata"
-                muted
-                playsInline
-                className="w-full"
-              />
-            ) : (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={item.url}
-                alt={item.uploader ? `Shared by ${pretty(item.uploader)}` : ""}
-                loading="lazy"
-                className="w-full"
-              />
-            )}
+            <span className="relative block">
+              {item.isVideo ? (
+                <video
+                  src={item.url}
+                  preload="metadata"
+                  muted
+                  playsInline
+                  className="w-full"
+                />
+              ) : (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={item.url}
+                  alt={item.uploader ? `Shared by ${pretty(item.uploader)}` : ""}
+                  loading="lazy"
+                  className="w-full"
+                />
+              )}
+              {item.isVideo && (
+                <span className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                  <svg width="40" height="40" viewBox="0 0 24 24" aria-hidden>
+                    <circle cx="12" cy="12" r="12" fill="rgba(52,67,94,0.55)" />
+                    <path d="M9 8l7 4-7 4z" fill="#FBF7EC" />
+                  </svg>
+                </span>
+              )}
+            </span>
             {item.uploader && item.uploader !== "guest" && (
               <span className="block px-3 py-2 text-xs capitalize text-ink/55">
                 {pretty(item.uploader)}
@@ -162,6 +172,14 @@ export default function GalleryGrid({ items }: { items: GalleryItem[] }) {
               Next
             </button>
           </div>
+          {!active.isVideo && (
+            <p
+              className="text-center text-xs text-cream/60"
+              onClick={(e) => e.stopPropagation()}
+            >
+              On iPhone, long-press the photo to save it to your camera roll.
+            </p>
+          )}
         </div>
       )}
     </>

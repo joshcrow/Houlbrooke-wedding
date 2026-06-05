@@ -1,31 +1,34 @@
 import { del, head } from "@vercel/blob";
 import { NextResponse } from "next/server";
 import { MEDIA_PREFIX } from "@/lib/config";
-import { passcodeOk } from "@/lib/owner";
+import { isOwnerAuthed } from "@/lib/ownerSession";
 
-// Owner deletion: no time window (unlike the guest /api/delete). The couple can
-// curate the album at any point, as long as they have the passcode.
+// Owner deletion: requires a valid owner session cookie (no passcode in the
+// body). No time window — the couple can curate at any point.
 export async function POST(request: Request): Promise<NextResponse> {
-  const { url, passcode } = (await request.json()) as {
-    url?: unknown;
-    passcode?: unknown;
-  };
-
-  if (!passcodeOk(passcode)) {
-    return NextResponse.json({ error: "Wrong passcode." }, { status: 401 });
+  if (!isOwnerAuthed()) {
+    return NextResponse.json({ error: "Not authorized" }, { status: 401 });
   }
+
+  const { url } = (await request.json()) as { url?: unknown };
   if (typeof url !== "string" || !url) {
     return NextResponse.json({ error: "Missing url" }, { status: 400 });
   }
 
+  let meta;
   try {
-    const meta = await head(url);
-    if (!meta.pathname.startsWith(MEDIA_PREFIX)) {
-      return NextResponse.json({ error: "Not allowed" }, { status: 403 });
-    }
+    meta = await head(url);
   } catch {
-    // Already gone — treat as success so the UI clears.
-    return NextResponse.json({ ok: true });
+    // Genuinely can't look it up — report it rather than pretending success,
+    // so a transient error doesn't make the UI think a photo is gone.
+    return NextResponse.json(
+      { error: "Couldn't reach storage — try again." },
+      { status: 502 },
+    );
+  }
+
+  if (!meta.pathname.startsWith(MEDIA_PREFIX)) {
+    return NextResponse.json({ error: "Not allowed" }, { status: 403 });
   }
 
   await del(url);

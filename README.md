@@ -7,13 +7,16 @@ non-technical guest can do it one-handed with zero instructions.
 ## How it works for a guest
 
 1. Scan the QR code (or tap the link).
-2. Type their first name once (remembered after that).
-3. Tap **Add Photos & Videos**, pick from their camera roll — done. Files
-   upload automatically with a progress indicator and a thank-you.
+2. Type their name once (remembered after that; required before choosing files).
+3. Tap **Choose Photos & Videos** and pick from the camera roll — they're
+   **staged** locally so the guest can review and remove any before sharing.
+4. Tap **Upload N to the album** to commit. A sticky bar shows overall progress;
+   failures surface with a **Retry all**.
 
-Files upload **at full quality, untouched** — the couple gets the real
-originals. Large files (video + full-size photos) use resilient multipart
-chunked uploads to survive flaky venue wifi.
+Nothing is public until the guest taps Upload. Files upload **at full quality,
+untouched** — the couple gets the real originals — and large files use resilient
+multipart chunked uploads to survive flaky venue wifi. Guests can't delete after
+sharing; only the couple can, via `/manage`.
 
 ---
 
@@ -62,8 +65,10 @@ Two ways to handle it, if the gallery matters:
 
 ## The owner page (`/manage`) — for the couple, no terminal
 
-Set an `OWNER_PASSCODE` env var in Vercel (something only the bride & groom
-know), then redeploy. They visit **`/manage`**, enter the passcode, and can:
+Set an `OWNER_PASSCODE` env var in Vercel — use a **long, random** passphrase
+(it's the only thing protecting download/delete), then redeploy. Unlocking sets
+a short-lived owner session cookie, so the passcode is never put in a URL. The
+couple visits **`/manage`**, enters the passcode, and can:
 
 - **Download everything as one `.zip`** — one click, straight from the browser.
 - **Remove any photo/video** from the album (no time limit).
@@ -104,8 +109,10 @@ npm run dev
 | `app/page.tsx` | The upload page guests land on |
 | `components/UploadExperience.tsx` | The whole upload UX |
 | `app/api/upload/route.ts` | No-login upload-token gatekeeper |
-| `app/gallery/page.tsx` | Everyone's photos |
+| `app/gallery/page.tsx` | Everyone's photos (tap to expand + download) |
+| `app/manage/page.tsx` | Owner-only: download-all zip, remove anything |
 | `lib/config.ts` | Names, limits, allowed types — tweak here |
-| `lib/processImage.ts` | On-device downscale + HEIC→JPEG |
+| `lib/listMedia.ts` | Shared blob listing for gallery + manage |
+| `lib/ownerSession.ts` | Owner passcode session (signed cookie) |
 | `scripts/make-qr.mjs` | QR code + printable table card |
-| `scripts/export.mjs` | Download-all after the wedding |
+| `scripts/export.mjs` | Verified download-all + zip after the wedding |

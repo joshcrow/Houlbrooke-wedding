@@ -9,9 +9,10 @@ import { fileExtension, slugify } from "@/lib/slug";
 // videos and full-size photos survive flaky venue wifi.
 const MULTIPART_THRESHOLD = 8 * 1024 * 1024;
 
-// staged = chosen but NOT yet shared; nothing is public until the guest taps
-// Upload. uploading/done/error track the commit; removing = deleting from album.
-type Status = "staged" | "uploading" | "done" | "error" | "removing";
+// staged = chosen but NOT shared yet; nothing is public until the guest taps
+// Upload. After upload there is no guest delete — only the couple can remove
+// from the album (via /manage). Staging is the guests' review step.
+type Status = "staged" | "uploading" | "done" | "error";
 
 interface Item {
   id: string;
@@ -21,16 +22,13 @@ interface Item {
   status: Status;
   progress: number;
   error?: string;
-  url?: string; // the public blob URL, once uploaded (needed to remove it)
+  uploaderSlug?: string; // stamped at first upload so retries keep attribution
 }
 
 const NAME_KEY = "kc-uploader-name";
 const CONCURRENCY = 3;
-// Cap rendered thumbnails so a guest selecting hundreds of photos can't run the
-// phone out of memory. Newest items render first; the rest still upload.
 const MAX_VISIBLE_TILES = 30;
 
-// localStorage throws in iOS Private Mode — never let that break the page.
 function safeGet(key: string): string {
   try {
     return localStorage.getItem(key) ?? "";
@@ -42,10 +40,9 @@ function safeSet(key: string, value: string): void {
   try {
     localStorage.setItem(key, value);
   } catch {
-    /* ignore */
+    /* ignore (iOS Private Mode) */
   }
 }
-// crypto.randomUUID is missing on older iOS Safari; fall back gracefully.
 function newId(): string {
   try {
     return crypto.randomUUID();
@@ -59,12 +56,12 @@ export default function UploadExperience() {
   const [items, setItems] = useState<Item[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const [nameError, setNameError] = useState(false);
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(
+    null,
+  );
   const inputRef = useRef<HTMLInputElement>(null);
   const nameInputRef = useRef<HTMLInputElement>(null);
-  // Keep the actual File for each item until it's uploaded (for the commit and
-  // for "Retry" re-sending the exact same file).
   const filesRef = useRef<Map<string, File>>(new Map());
-  // Track created object URLs so we can free them when the page unmounts.
   const urlsRef = useRef<string[]>([]);
 
   useEffect(() => {
@@ -80,7 +77,6 @@ export default function UploadExperience() {
     if (value.trim()) setNameError(false);
   }
 
-  // Require a name before the picker opens — focus the field if it's empty.
   function openPicker() {
     if (!name.trim()) {
       setNameError(true);
@@ -96,7 +92,7 @@ export default function UploadExperience() {
     );
   }
 
-  // Step 1: choose files. They are staged locally — nothing is uploaded yet.
+  // Step 1: choose files — staged locally, nothing uploaded yet.
   function handleFiles(fileList: FileList | null) {
     if (!fileList || fileList.length === 0) return;
     const staged: Item[] = Array.from(fileList).map((file) => {
@@ -116,40 +112,50 @@ export default function UploadExperience() {
     setItems((prev) => [...staged, ...prev]);
   }
 
-  // Step 2: the guest explicitly commits everything staged to the public album.
-  async function uploadAll() {
-    if (isUploading) return;
-    const queue = items.filter((it) => it.status === "staged");
+  async function runUploads(queue: Item[], fallbackSlug: string) {
     if (queue.length === 0) return;
-
-    const uploaderSlug = slugify(name);
     setIsUploading(true);
+    setProgress({ done: 0, total: queue.length });
     let cursor = 0;
     async function worker() {
       while (cursor < queue.length) {
-        await uploadOne(queue[cursor++], uploaderSlug);
+        await uploadOne(queue[cursor++], fallbackSlug);
+        setProgress((p) => (p ? { ...p, done: p.done + 1 } : p));
       }
     }
     await Promise.all(
       Array.from({ length: Math.min(CONCURRENCY, queue.length) }, worker),
     );
     setIsUploading(false);
+    setProgress(null);
   }
 
-  async function uploadOne(item: Item, uploaderSlug: string) {
+  // Step 2: commit everything staged to the album.
+  async function uploadAll() {
+    if (isUploading) return;
+    const queue = items.filter((it) => it.status === "staged");
+    await runUploads(queue, slugify(name));
+  }
+
+  async function retryAll() {
+    if (isUploading) return;
+    const queue = items.filter((it) => it.status === "error");
+    await runUploads(queue, slugify(name));
+  }
+
+  async function uploadOne(item: Item, fallbackSlug: string) {
     const file = filesRef.current.get(item.id);
     if (!file) {
-      patch(item.id, {
-        status: "error",
-        error: "Something went wrong — please re-add this photo.",
-      });
+      patch(item.id, { status: "error", error: "Please re-add this photo." });
       return;
     }
+    const slug = item.uploaderSlug ?? fallbackSlug;
 
     try {
       if (file.size > MAX_FILE_BYTES) {
         patch(item.id, {
           status: "error",
+          uploaderSlug: slug,
           error: item.isVideo
             ? "This video's a bit too big — try a shorter clip."
             : "This file's too big to upload.",
@@ -159,15 +165,21 @@ export default function UploadExperience() {
 
       const ext = fileExtension(file.name, item.isVideo ? "mp4" : "jpg");
       const rawBase = file.name.replace(/\.[^.]+$/, "");
-      const base = rawBase.replace(/[^\w.-]+/g, "_").slice(0, 60) || "photo";
-      const pathname = `${MEDIA_PREFIX}${uploaderSlug}/${base}.${ext}`;
+      const base =
+        rawBase.replace(/[^\w.-]+/g, "_").replace(/\.\.+/g, "_").slice(0, 60) ||
+        "photo";
+      const pathname = `${MEDIA_PREFIX}${slug}/${base}.${ext}`;
 
-      patch(item.id, { status: "uploading", progress: 0, error: undefined });
+      patch(item.id, {
+        status: "uploading",
+        progress: 0,
+        error: undefined,
+        uploaderSlug: slug,
+      });
 
-      const result = await upload(pathname, file, {
+      await upload(pathname, file, {
         access: "public",
         handleUploadUrl: "/api/upload",
-        // Empty on some iPhone files — let Blob infer from the .ext in pathname.
         contentType: file.type || undefined,
         multipart: item.isVideo || file.size > MULTIPART_THRESHOLD,
         onUploadProgress: ({ percentage }) =>
@@ -175,12 +187,12 @@ export default function UploadExperience() {
       });
 
       filesRef.current.delete(item.id);
-      patch(item.id, { status: "done", progress: 100, url: result.url });
+      patch(item.id, { status: "done", progress: 100 });
     } catch (err) {
-      // Surface the true cause in the console; keep the on-screen text friendly.
       console.error("Upload failed:", err);
       patch(item.id, {
         status: "error",
+        uploaderSlug: slug,
         error: "Upload didn't go through — tap retry.",
       });
     }
@@ -188,14 +200,14 @@ export default function UploadExperience() {
 
   function retry(item: Item) {
     if (filesRef.current.get(item.id)) {
-      void uploadOne(item, slugify(name));
+      void runUploads([item], slugify(name));
       return;
     }
     inputRef.current?.click();
   }
 
-  // Remove a still-staged item before it's shared — purely local, no network.
-  function unstageItem(item: Item) {
+  // Discard a staged or failed item locally (it isn't in the album).
+  function discard(item: Item) {
     filesRef.current.delete(item.id);
     if (item.preview) {
       URL.revokeObjectURL(item.preview);
@@ -204,32 +216,17 @@ export default function UploadExperience() {
     setItems((prev) => prev.filter((it) => it.id !== item.id));
   }
 
-  // Remove an already-uploaded item from the public album (server delete).
-  async function removeUploaded(item: Item) {
-    if (!item.url) return;
-    if (!window.confirm("Remove this photo from the album?")) return;
-
-    patch(item.id, { status: "removing" });
-    try {
-      const res = await fetch("/api/delete", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: item.url }),
-      });
-      if (!res.ok) throw new Error(await res.text());
-      setItems((prev) => prev.filter((it) => it.id !== item.id));
-    } catch (err) {
-      console.error("Remove failed:", err);
-      patch(item.id, { status: "done" });
-      window.alert("Couldn't remove that photo — please try again.");
-    }
-  }
-
   const stagedCount = items.filter((i) => i.status === "staged").length;
-  const uploadingCount = items.filter((i) => i.status === "uploading").length;
   const doneCount = items.filter((i) => i.status === "done").length;
-  const visibleItems = items.slice(0, MAX_VISIBLE_TILES);
-  const hiddenCount = items.length - visibleItems.length;
+  const errorCount = items.filter((i) => i.status === "error").length;
+
+  // Always show failed tiles (never hide a failure behind the cap).
+  const errorItems = items.filter((i) => i.status === "error");
+  const others = items.filter((i) => i.status !== "error");
+  const visibleOthers = others.slice(0, MAX_VISIBLE_TILES);
+  const visibleItems = [...errorItems, ...visibleOthers];
+  const hiddenCount = others.length - visibleOthers.length;
+  const showBar = stagedCount > 0 || isUploading;
 
   return (
     <div className="w-full max-w-xl">
@@ -284,8 +281,23 @@ export default function UploadExperience() {
         Pick as many as you like. Nothing is shared until you tap Upload.
       </p>
 
+      {errorCount > 0 && !isUploading && (
+        <div className="mt-5 flex items-center justify-between gap-3 rounded-2xl bg-ink/10 px-4 py-3">
+          <span className="text-sm text-ink/80">
+            {errorCount} didn&apos;t upload.
+          </span>
+          <button
+            type="button"
+            onClick={retryAll}
+            className="rounded-full bg-blue-deep px-5 py-2 text-sm font-semibold text-cream active:scale-[0.99]"
+          >
+            Retry all
+          </button>
+        </div>
+      )}
+
       {items.length > 0 && (
-        <ul className="mt-6 grid grid-cols-3 gap-3 sm:grid-cols-4">
+        <ul className="mt-5 grid grid-cols-3 gap-3 sm:grid-cols-4">
           {visibleItems.map((item) => (
             <li
               key={item.id}
@@ -308,46 +320,56 @@ export default function UploadExperience() {
                   />
                 ))}
 
-              <div className="absolute inset-0 flex items-center justify-center">
-                {(item.status === "uploading" ||
-                  item.status === "removing") && (
+              {item.isVideo && item.status !== "error" && (
+                <span className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                  <svg width="34" height="34" viewBox="0 0 24 24" aria-hidden>
+                    <circle cx="12" cy="12" r="12" fill="rgba(52,67,94,0.55)" />
+                    <path d="M9 8l7 4-7 4z" fill="#FBF7EC" />
+                  </svg>
+                </span>
+              )}
+
+              {item.status === "uploading" && (
+                <span className="absolute inset-0 flex items-center justify-center">
                   <span className="rounded-full bg-ink/60 px-2 py-1 text-xs text-cream">
-                    {item.status === "uploading" ? `${item.progress}%` : "…"}
+                    {item.progress}%
                   </span>
-                )}
-                {item.status === "error" && (
-                  <button
-                    type="button"
-                    onClick={() => retry(item)}
-                    className="absolute inset-0 flex flex-col items-center justify-center bg-ink/70 p-1 text-center text-[11px] leading-tight text-cream"
-                  >
-                    {item.error}
-                    <span className="mt-1 underline">Retry</span>
-                  </button>
-                )}
-              </div>
+                </span>
+              )}
+
+              {item.status === "error" && (
+                <button
+                  type="button"
+                  onClick={() => retry(item)}
+                  className="absolute inset-0 flex flex-col items-center justify-center bg-ink/70 p-1 text-center text-[11px] leading-tight text-cream"
+                >
+                  {item.error}
+                  <span className="mt-1 underline">Retry</span>
+                </button>
+              )}
 
               {item.status === "staged" && (
                 <span className="absolute bottom-1.5 left-1.5 rounded-full bg-ink/55 px-2 py-0.5 text-[10px] text-cream">
                   Not shared yet
                 </span>
               )}
+              {item.status === "done" && (
+                <span className="absolute bottom-1.5 left-1.5 rounded-full bg-blue-deep/85 px-2 py-0.5 text-[10px] text-cream">
+                  Shared
+                </span>
+              )}
 
-              {(item.status === "staged" && !isUploading) ||
-              item.status === "done" ? (
-                <button
-                  type="button"
-                  onClick={() =>
-                    item.status === "done"
-                      ? removeUploaded(item)
-                      : unstageItem(item)
-                  }
-                  aria-label="Remove this photo"
-                  className="absolute right-1.5 top-1.5 flex h-7 w-7 items-center justify-center rounded-full bg-ink/70 text-base leading-none text-cream"
-                >
-                  ×
-                </button>
-              ) : null}
+              {(item.status === "staged" || item.status === "error") &&
+                !isUploading && (
+                  <button
+                    type="button"
+                    onClick={() => discard(item)}
+                    aria-label="Remove this photo"
+                    className="absolute right-1.5 top-1.5 flex h-9 w-9 items-center justify-center rounded-full bg-ink/70 text-xl leading-none text-cream"
+                  >
+                    ×
+                  </button>
+                )}
             </li>
           ))}
         </ul>
@@ -359,27 +381,44 @@ export default function UploadExperience() {
         </p>
       )}
 
-      {stagedCount > 0 && (
-        <button
-          type="button"
-          onClick={uploadAll}
-          disabled={isUploading}
-          className="mt-5 w-full rounded-2xl bg-blue-deep px-6 py-4 text-lg font-semibold text-cream shadow-card transition active:scale-[0.99] disabled:opacity-70"
-        >
-          {isUploading
-            ? "Uploading…"
-            : `Upload ${stagedCount} to the album`}
-        </button>
+      {doneCount > 0 && !isUploading && stagedCount === 0 && errorCount === 0 && (
+        <div className="pop-in mt-6 rounded-2xl bg-lemon-soft/70 px-5 py-4 text-center text-lg text-blue-deep">
+          Thank you{name ? `, ${name.trim()}` : ""}. Add more photos anytime.
+        </div>
       )}
 
-      {doneCount > 0 && uploadingCount === 0 && stagedCount === 0 && (
-        <div className="pop-in mt-6 rounded-2xl bg-lemon-soft/70 px-5 py-4 text-center text-blue-deep">
-          <p className="text-lg">
-            Thank you{name ? `, ${name.trim()}` : ""}. Add more photos anytime.
-          </p>
-          <p className="mt-1 text-sm text-blue-deep/80">
-            Tap × on a photo to remove it from the album.
-          </p>
+      {/* Sticky action bar: always-reachable Upload + overall progress. */}
+      {showBar && <div className="h-24" />}
+      {showBar && (
+        <div className="fixed inset-x-0 bottom-0 z-40 border-t border-blue-soft/40 bg-cream/95 px-4 py-3 backdrop-blur">
+          <div className="mx-auto max-w-xl">
+            {isUploading && progress ? (
+              <>
+                <div className="mb-2 h-2 w-full overflow-hidden rounded-full bg-blue-soft/30">
+                  <div
+                    className="h-full bg-blue-deep transition-all"
+                    style={{
+                      width: `${Math.round(
+                        (progress.done / progress.total) * 100,
+                      )}%`,
+                    }}
+                  />
+                </div>
+                <p className="text-center text-sm font-medium text-blue-deep">
+                  Uploading {progress.done} of {progress.total}… keep this page
+                  open
+                </p>
+              </>
+            ) : (
+              <button
+                type="button"
+                onClick={uploadAll}
+                className="w-full rounded-2xl bg-blue-deep px-6 py-4 text-lg font-semibold text-cream shadow-card active:scale-[0.99]"
+              >
+                Upload {stagedCount} to the album
+              </button>
+            )}
+          </div>
         </div>
       )}
     </div>

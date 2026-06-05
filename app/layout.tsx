@@ -19,8 +19,21 @@ const sans = Inter({
 });
 
 export const metadata: Metadata = {
+  metadataBase: process.env.NEXT_PUBLIC_SITE_URL
+    ? new URL(process.env.NEXT_PUBLIC_SITE_URL)
+    : undefined,
   title: `${COUPLE.names} ${COUPLE.lastName} — Share Your Photos`,
   description: `Add your photos & videos from ${COUPLE.names}'s wedding.`,
+  openGraph: {
+    title: `${COUPLE.names} ${COUPLE.lastName} — Share Your Photos`,
+    description: `Add your photos & videos from ${COUPLE.names}'s wedding.`,
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: `${COUPLE.names} — Share Your Photos`,
+    description: `Add your photos & videos from ${COUPLE.names}'s wedding.`,
+  },
 };
 
 export default function RootLayout({

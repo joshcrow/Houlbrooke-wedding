@@ -1,7 +1,8 @@
 import Link from "next/link";
 import ManageGrid from "@/components/ManageGrid";
-import { COUPLE, SITE_URL } from "@/lib/config";
-import { listAllMedia } from "@/lib/listMedia";
+import { COUPLE } from "@/lib/config";
+import { listAllMedia, type MediaItem } from "@/lib/listMedia";
+import { isOwnerAuthed } from "@/lib/ownerSession";
 
 export const dynamic = "force-dynamic";
 
@@ -11,11 +12,15 @@ export const metadata = {
 };
 
 export default async function Manage() {
-  let items = [] as Awaited<ReturnType<typeof listAllMedia>>;
-  try {
-    items = await listAllMedia();
-  } catch {
-    // Leave empty; the page still renders with the passcode gate.
+  // Only list (and send) media once the owner session is verified server-side.
+  const authed = isOwnerAuthed();
+  let items: MediaItem[] = [];
+  if (authed) {
+    try {
+      items = await listAllMedia();
+    } catch {
+      /* render empty; the grid still works */
+    }
   }
 
   return (
@@ -34,7 +39,7 @@ export default async function Manage() {
           </Link>
         </div>
 
-        <ManageGrid initialItems={items} shareUrl={SITE_URL} />
+        <ManageGrid authed={authed} initialItems={items} />
       </div>
     </main>
   );

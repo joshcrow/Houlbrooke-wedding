@@ -27,21 +27,28 @@ export async function listAllMedia(): Promise<MediaItem[]> {
     const res = await list({ prefix: MEDIA_PREFIX, limit: 1000, cursor });
     blobs.push(...res.blobs);
     cursor = res.cursor;
-  } while (cursor && blobs.length < 10000);
+  } while (cursor); // page through everything so owner stats are never truncated
 
   blobs.sort(
     (a, b) =>
       new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime(),
   );
 
-  return blobs.map((b) => ({
-    url: b.url,
-    downloadUrl: b.downloadUrl,
-    pathname: b.pathname,
-    isVideo: VIDEO_RE.test(b.pathname),
-    uploader: decodeURIComponent(
-      b.pathname.replace(MEDIA_PREFIX, "").split("/")[0] ?? "",
-    ),
-    size: b.size,
-  }));
+  return blobs.map((b) => {
+    const rawUploader = b.pathname.replace(MEDIA_PREFIX, "").split("/")[0] ?? "";
+    let uploader = rawUploader;
+    try {
+      uploader = decodeURIComponent(rawUploader); // can throw on bad % encoding
+    } catch {
+      /* keep raw — never fail the whole listing over one bad name */
+    }
+    return {
+      url: b.url,
+      downloadUrl: b.downloadUrl,
+      pathname: b.pathname,
+      isVideo: VIDEO_RE.test(b.pathname),
+      uploader,
+      size: b.size,
+    };
+  });
 }

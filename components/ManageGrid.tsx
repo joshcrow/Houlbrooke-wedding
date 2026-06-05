@@ -3,8 +3,6 @@
 import { useEffect, useState } from "react";
 import type { MediaItem } from "@/lib/listMedia";
 
-const PASS_KEY = "kc-owner-pass";
-
 function formatSize(bytes: number): string {
   if (bytes >= 1024 ** 3) return `${(bytes / 1024 ** 3).toFixed(1)} GB`;
   if (bytes >= 1024 ** 2) return `${Math.round(bytes / 1024 ** 2)} MB`;
@@ -12,30 +10,26 @@ function formatSize(bytes: number): string {
 }
 
 export default function ManageGrid({
+  authed,
   initialItems,
-  shareUrl,
 }: {
+  authed: boolean;
   initialItems: MediaItem[];
-  shareUrl: string;
 }) {
   const [passcode, setPasscode] = useState("");
-  const [unlocked, setUnlocked] = useState(false);
   const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
   const [items, setItems] = useState<MediaItem[]>(initialItems);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [origin, setOrigin] = useState("");
 
-  useEffect(() => {
-    const saved = sessionStorage.getItem(PASS_KEY);
-    if (saved) {
-      setPasscode(saved);
-      setUnlocked(true); // delete/download re-check server-side anyway
-    }
-  }, []);
+  useEffect(() => setOrigin(window.location.origin), []);
 
   async function unlock(e: React.FormEvent) {
     e.preventDefault();
     setError("");
+    setSubmitting(true);
     try {
       const res = await fetch("/api/owner/verify", {
         method: "POST",
@@ -47,10 +41,12 @@ export default function ManageGrid({
         setError(data.error ?? "Couldn't unlock.");
         return;
       }
-      sessionStorage.setItem(PASS_KEY, passcode);
-      setUnlocked(true);
+      // Session cookie is set — reload so the server renders the album.
+      window.location.reload();
     } catch {
       setError("Network error — try again.");
+    } finally {
+      setSubmitting(false);
     }
   }
 
@@ -61,11 +57,10 @@ export default function ManageGrid({
       const res = await fetch("/api/owner/delete", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: item.url, passcode }),
+        body: JSON.stringify({ url: item.url }),
       });
       if (res.status === 401) {
-        setUnlocked(false);
-        sessionStorage.removeItem(PASS_KEY);
+        window.location.reload(); // session expired → back to passcode
         return;
       }
       if (!res.ok) throw new Error(await res.text());
@@ -78,7 +73,7 @@ export default function ManageGrid({
   }
 
   function copyShare() {
-    navigator.clipboard?.writeText(`${shareUrl}/gallery`).then(
+    navigator.clipboard?.writeText(`${origin}/gallery`).then(
       () => {
         setCopied(true);
         setTimeout(() => setCopied(false), 2000);
@@ -87,7 +82,7 @@ export default function ManageGrid({
     );
   }
 
-  if (!unlocked) {
+  if (!authed) {
     return (
       <form onSubmit={unlock} className="mx-auto mt-10 max-w-sm text-center">
         <label className="mb-2 block text-sm font-medium text-blue-deep">
@@ -97,14 +92,16 @@ export default function ManageGrid({
           type="password"
           value={passcode}
           onChange={(e) => setPasscode(e.target.value)}
+          autoComplete="current-password"
           className="w-full rounded-2xl border border-blue-soft/60 bg-white/70 px-4 py-3 text-lg text-ink outline-none focus:border-blue-deep focus:ring-2 focus:ring-blue-soft/50"
         />
         {error && <p className="mt-2 text-sm text-blue-deep">{error}</p>}
         <button
           type="submit"
-          className="mt-4 w-full rounded-2xl bg-blue-deep px-6 py-3 text-lg font-semibold text-cream shadow-card active:scale-[0.99]"
+          disabled={submitting}
+          className="mt-4 w-full rounded-2xl bg-blue-deep px-6 py-3 text-lg font-semibold text-cream shadow-card active:scale-[0.99] disabled:opacity-60"
         >
-          Unlock
+          {submitting ? "Unlocking…" : "Unlock"}
         </button>
       </form>
     );
@@ -123,9 +120,7 @@ export default function ManageGrid({
 
         <div className="mt-4 flex flex-col gap-3 sm:flex-row">
           <a
-            href={`/api/owner/download-all?passcode=${encodeURIComponent(
-              passcode,
-            )}`}
+            href="/api/owner/download-all"
             className="flex-1 rounded-2xl bg-blue-deep px-6 py-3 text-center text-lg font-semibold text-cream shadow-card active:scale-[0.99]"
           >
             Download everything (.zip)
@@ -140,9 +135,9 @@ export default function ManageGrid({
         </div>
 
         <p className="mt-3 text-xs text-ink/55">
-          Tip: if the .zip is very large (lots of video) and the download
-          doesn&apos;t finish, use the bulk-export script as a backup. Removing
-          an item here is permanent.
+          The zip ends with a manifest listing every file (and flags any it
+          couldn&apos;t include). For a very large archive, the export script is
+          the verified backup. Removing an item here is permanent.
         </p>
       </div>
 
@@ -173,7 +168,7 @@ export default function ManageGrid({
               type="button"
               onClick={() => remove(item)}
               disabled={deleting === item.url}
-              className="absolute right-2 top-2 rounded-full bg-ink/75 px-3 py-1 text-xs text-cream disabled:opacity-50"
+              className="absolute right-2 top-2 rounded-full bg-ink/75 px-3 py-1.5 text-xs text-cream disabled:opacity-50"
             >
               {deleting === item.url ? "…" : "Remove"}
             </button>

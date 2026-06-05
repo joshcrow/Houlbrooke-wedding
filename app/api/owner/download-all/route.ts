@@ -2,43 +2,81 @@ import { list } from "@vercel/blob";
 import archiver from "archiver";
 import { Readable } from "node:stream";
 import { MEDIA_PREFIX } from "@/lib/config";
-import { passcodeOk } from "@/lib/owner";
+import { isOwnerAuthed } from "@/lib/ownerSession";
 
-// Stream a .zip of every original straight to the browser — no terminal, one
-// click from the owner page. GET (not POST) so it's a plain browser download
-// the OS can save directly. Passcode travels in the query for the same reason.
+// Stream a .zip of every original to the browser — one click from /manage, no
+// terminal. Auth is the owner session cookie (set by /api/owner/verify), so the
+// passcode never appears in a URL.
 //
-// Trade-off to know: this runs inside a single request, so a very large archive
-// (lots of HD video) can exceed the function's time limit. For typical photo
-// sets it's fine; the bulk-export script remains as the heavy-duty backup.
+// Integrity: each file is retried, and the zip always ends with a manifest. If
+// anything couldn't be fetched, the manifest is named _INCOMPLETE_... and lists
+// the missing files, so a partial archive can never masquerade as complete.
 export const dynamic = "force-dynamic";
 export const maxDuration = 300; // seconds (Vercel Pro ceiling)
 
-export async function GET(request: Request): Promise<Response> {
-  const passcode = new URL(request.url).searchParams.get("passcode");
-  if (!passcodeOk(passcode)) {
+// Defense-in-depth: even though upload validates pathnames, never let a name
+// escape its folder in the zip.
+function safeEntryName(pathname: string): string {
+  return pathname
+    .replace(/^media\//, "")
+    .replace(/\\/g, "/")
+    .split("/")
+    .filter((seg) => seg && seg !== "." && seg !== "..")
+    .join("/");
+}
+
+async function fetchWithRetry(url: string, tries = 3): Promise<Response | null> {
+  for (let i = 0; i < tries; i++) {
+    try {
+      const r = await fetch(url);
+      if (r.ok && r.body) return r;
+    } catch {
+      /* retry */
+    }
+    await new Promise((res) => setTimeout(res, 250 * (i + 1)));
+  }
+  return null;
+}
+
+export async function GET(): Promise<Response> {
+  if (!isOwnerAuthed()) {
     return new Response("Unauthorized", { status: 401 });
   }
 
-  const archive = archiver("zip", { store: true }); // photos/videos don't recompress
+  const archive = archiver("zip", { store: true });
 
-  // Feed the archive in the background; backpressure from the client download
-  // keeps memory bounded (entries are read one at a time).
   (async () => {
+    const expected: string[] = [];
+    const failed: string[] = [];
     try {
       let cursor: string | undefined;
       do {
         const res = await list({ prefix: MEDIA_PREFIX, limit: 1000, cursor });
         for (const blob of res.blobs) {
-          const r = await fetch(blob.url);
-          if (r.ok && r.body) {
+          expected.push(blob.pathname);
+          const r = await fetchWithRetry(blob.url);
+          if (r?.body) {
             archive.append(Readable.fromWeb(r.body as never), {
-              name: blob.pathname.replace(/^media\//, ""),
+              name: safeEntryName(blob.pathname),
             });
+          } else {
+            failed.push(blob.pathname);
           }
         }
         cursor = res.cursor;
       } while (cursor);
+
+      const ok = expected.length - failed.length;
+      const manifest =
+        `Expected: ${expected.length}\nIncluded: ${ok}\nFailed: ${failed.length}\n\n` +
+        (failed.length
+          ? `MISSING (re-run, or use the export script):\n${failed.join("\n")}\n`
+          : "All files included.\n");
+      archive.append(manifest, {
+        name: failed.length
+          ? `_INCOMPLETE_${failed.length}_missing.txt`
+          : "_manifest.txt",
+      });
       await archive.finalize();
     } catch (err) {
       archive.destroy(err as Error);
