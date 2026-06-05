@@ -1,5 +1,6 @@
 import { list } from "@vercel/blob";
 import Link from "next/link";
+import GalleryGrid, { type GalleryItem } from "@/components/GalleryGrid";
 import { COUPLE, MEDIA_PREFIX } from "@/lib/config";
 
 // Always fresh — new uploads should show on reload.
@@ -8,13 +9,15 @@ export const dynamic = "force-dynamic";
 const VIDEO_RE = /\.(mp4|mov|webm|m4v)$/i;
 
 export default async function Gallery() {
-  let blobs: { url: string; pathname: string; uploadedAt: Date }[] = [];
+  let items: GalleryItem[] = [];
   let error = "";
 
   try {
     // list() returns up to 1000 sorted by pathname, so page through the whole
     // store (cap at 10k) before sorting by date — otherwise late-alphabet
     // uploaders would be dropped once there are more than 1000 files.
+    const blobs: { url: string; downloadUrl: string; pathname: string; uploadedAt: Date }[] =
+      [];
     let cursor: string | undefined;
     do {
       const res = await list({ prefix: MEDIA_PREFIX, limit: 1000, cursor });
@@ -26,6 +29,15 @@ export default async function Gallery() {
       (a, b) =>
         new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime(),
     );
+
+    items = blobs.map((blob) => ({
+      url: blob.url,
+      downloadUrl: blob.downloadUrl,
+      isVideo: VIDEO_RE.test(blob.pathname),
+      uploader: decodeURIComponent(
+        blob.pathname.replace(MEDIA_PREFIX, "").split("/")[0] ?? "",
+      ),
+    }));
   } catch {
     error = "Gallery isn't ready yet — check back once photos are added.";
   }
@@ -48,49 +60,21 @@ export default async function Gallery() {
 
         {error && <p className="text-center text-ink/60">{error}</p>}
 
-        {!error && blobs.length === 0 && (
+        {!error && items.length === 0 && (
           <p className="text-center text-ink/60">
             No photos yet — be the first to add one!
           </p>
         )}
 
-        <div className="columns-2 gap-3 sm:columns-3 md:columns-4 [&>*]:mb-3">
-          {blobs.map((blob) => {
-            const uploader = decodeURIComponent(
-              blob.pathname.replace(MEDIA_PREFIX, "").split("/")[0] ?? "",
-            );
-            const isVideo = VIDEO_RE.test(blob.pathname);
-            return (
-              <figure
-                key={blob.url}
-                className="break-inside-avoid overflow-hidden rounded-2xl bg-white/60 shadow-sm"
-              >
-                {isVideo ? (
-                  <video
-                    src={blob.url}
-                    controls
-                    preload="metadata"
-                    playsInline
-                    className="w-full"
-                  />
-                ) : (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={blob.url}
-                    alt={`Shared by ${uploader}`}
-                    loading="lazy"
-                    className="w-full"
-                  />
-                )}
-                {uploader && uploader !== "guest" && (
-                  <figcaption className="px-3 py-2 text-xs capitalize text-ink/55">
-                    {uploader.replace(/-/g, " ")}
-                  </figcaption>
-                )}
-              </figure>
-            );
-          })}
-        </div>
+        {!error && items.length > 0 && (
+          <>
+            <p className="mb-5 text-center text-sm text-ink/55">
+              Tap any photo to view it full size and download it. A
+              download-everything option will be available after the wedding.
+            </p>
+            <GalleryGrid items={items} />
+          </>
+        )}
       </div>
     </main>
   );
